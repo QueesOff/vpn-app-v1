@@ -1,7 +1,8 @@
 import React, {useState} from 'react';
-import {Image, Pressable, StyleSheet, Text, View} from 'react-native';
+import {Alert, Image, Pressable, StyleSheet, Text, View} from 'react-native';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {images, theme} from '../../constants';
+import {connectToVpn, disconnectFromVpn} from '../../services/vpnService';
 import {Server, ServerValue} from './Server';
 import {ServerList} from './ServerList';
 
@@ -12,19 +13,60 @@ const {colors, fonts, shadow, sizes, weights} = theme;
 export const VPN = () => {
   const insets = useSafeAreaInsets();
   const [connected, setConnected] = React.useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
   const [server, setServer] = useState<ServerValue>({
     name: 'Автоматически',
     icon: icons.automatic,
   });
   const [show, setShow] = useState(false);
 
-  const handleConnect = () => {
-    setConnected(!connected);
+  const handleConnect = async () => {
+    if (connected) {
+      // Отключение
+      setConnecting(true);
+      try {
+        const result = await disconnectFromVpn();
+        setConnected(false);
+        setStatusMessage(result.message);
+      } catch (error) {
+        Alert.alert('Ошибка', 'Не удалось отключиться от VPN');
+        console.error(error);
+      } finally {
+        setConnecting(false);
+      }
+    } else {
+      // Подключение
+      setConnecting(true);
+      try {
+        const serverId = server.id || 'default';
+        const result = await connectToVpn(serverId);
+        setConnected(result.isConnected);
+        setStatusMessage(result.message);
+
+        if (result.isConnected) {
+          Alert.alert('Успешно', `Подключено к серверу ${server.name}`);
+        } else {
+          Alert.alert('Ошибка', result.message);
+        }
+      } catch (error) {
+        Alert.alert('Ошибка', 'Не удалось подключиться к VPN');
+        console.error(error);
+      } finally {
+        setConnecting(false);
+      }
+    }
   };
 
   const handleServer = (value: ServerValue) => {
     setServer(value);
-    setConnected(false);
+    if (connected) {
+      // Если уже подключены, отключаемся при смене сервера
+      disconnectFromVpn().then(() => {
+        setConnected(false);
+        setStatusMessage('Отключено при смене сервера');
+      });
+    }
     setShow(false);
   };
 
@@ -50,19 +92,32 @@ export const VPN = () => {
           />
         </View>
 
+        {statusMessage ? (
+          <Text style={styles.statusMessage}>{statusMessage}</Text>
+        ) : null}
+
         <Image
           style={styles.image}
           source={icons[connected ? 'online' : 'offline']}
         />
         <Pressable
-          style={[styles.connect, connected && styles.connected]}
+          style={[
+            styles.connect,
+            connected && styles.connected,
+            connecting && styles.connecting,
+          ]}
+          disabled={connecting}
           onPress={handleConnect}>
           <Text
             style={[
               styles.connectText,
               {color: !connected ? colors.white : undefined},
             ]}>
-            {connected ? 'ОТКЛЮЧИТЬСЯ' : 'ПОДКЛЮЧИТЬСЯ'}
+            {connecting
+              ? 'ПОДОЖДИТЕ...'
+              : connected
+              ? 'ОТКЛЮЧИТЬСЯ'
+              : 'ПОДКЛЮЧИТЬСЯ'}
           </Text>
         </Pressable>
       </View>
@@ -101,6 +156,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderColor: colors.black,
   },
+  connecting: {
+    opacity: 0.7,
+  },
   connectedBlock: {
     ...shadow,
     flexDirection: 'row',
@@ -116,6 +174,12 @@ const styles = StyleSheet.create({
     fontWeight: weights.semibold,
     color: colors.gray,
     height: sizes.h3,
+  },
+  statusMessage: {
+    marginTop: 10,
+    color: colors.gray,
+    textAlign: 'center',
+    ...fonts.caption,
   },
   image: {
     width: 180,

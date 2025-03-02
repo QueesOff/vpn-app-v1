@@ -8,6 +8,8 @@ const {icons} = images;
 export type ServerValue = {
   name: string;
   icon: any;
+  isCustom?: boolean;
+  id?: string;
 };
 
 type Props = {

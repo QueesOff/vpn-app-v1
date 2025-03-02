@@ -6,6 +6,12 @@ const servers = [
     icon: icons.automatic,
   },
   {
+    name: 'Selectel (Россия)',
+    icon: icons.russia,
+    isCustom: true,
+    id: 'selectel',
+  },
+  {
     name: 'Нью-Йорк, США',
     icon: icons.us,
   },
