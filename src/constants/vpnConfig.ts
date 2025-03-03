@@ -1,18 +1,13 @@
 export const VPN_CONFIG = {
   server: {
-    host: '45.12.130.48',
-    port: 443, // порт для VPN подключений
-    protocol: 'vless',
+    host: '45.12.130.48', // IP вашего VPN сервера
   },
   credentials: {
-    uuid: 'a6c542e8-f416-452c-f', // ID из панели
-    path: '/ws',
+    username: 'vpnuser', // Имя пользователя IPSec
+    password: 'TAxap46WpwbD', // Пароль IPSec и PSK
   },
   settings: {
-    transport: 'ws', // изменено на ws
-    tls: true, // включаем TLS
-    xtls: false, // из панели: xtls выключен
-    sniffing: true, // из панели: sniffing включен
-    domain: '45.12.130.48', // добавляем домен
+    remoteId: '45.12.130.48', // IP сервера
+    localId: '', // Оставляем пустым для IKEv1
   },
 };

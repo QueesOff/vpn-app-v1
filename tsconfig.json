@@ -4,6 +4,7 @@
     "strict": true,
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    "typeRoots": ["./src/types", "./node_modules/@types"]
   }
 }

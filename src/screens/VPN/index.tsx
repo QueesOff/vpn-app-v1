@@ -1,7 +1,17 @@
 import React, {useState} from 'react';
-import {Alert, Image, Pressable, StyleSheet, Text, View} from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {images, theme} from '../../constants';
+import {checkDeviceSecurity} from '../../services/securityService';
 import {connectToVpn, disconnectFromVpn} from '../../services/vpnService';
 import {Server, ServerValue} from './Server';
 import {ServerList} from './ServerList';
@@ -20,17 +30,25 @@ export const VPN = () => {
     icon: icons.automatic,
   });
   const [show, setShow] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Проверяем поддержку VPN на текущей платформе
+  const isVpnSupported = Platform.OS === 'ios' || Platform.OS === 'android';
 
   const handleConnect = async () => {
     if (connected) {
       // Отключение
       setConnecting(true);
+      setError(null);
       try {
         const result = await disconnectFromVpn();
         setConnected(false);
         setStatusMessage(result.message);
       } catch (error) {
-        Alert.alert('Ошибка', 'Не удалось отключиться от VPN');
+        const errorMessage =
+          error instanceof Error ? error.message : 'Неизвестная ошибка';
+        setError(errorMessage);
+        Alert.alert('Ошибка', `Не удалось отключиться от VPN: ${errorMessage}`);
         console.error(error);
       } finally {
         setConnecting(false);
@@ -38,23 +56,92 @@ export const VPN = () => {
     } else {
       // Подключение
       setConnecting(true);
+      setError(null);
       try {
-        const serverId = server.id || 'default';
-        const result = await connectToVpn(serverId);
-        setConnected(result.isConnected);
-        setStatusMessage(result.message);
+        // Проверяем безопасность устройства перед подключением
+        const securityStatus = await checkDeviceSecurity();
 
-        if (result.isConnected) {
-          Alert.alert('Успешно', `Подключено к серверу ${server.name}`);
+        if (!securityStatus.isSecure && server.id === 'selectel') {
+          // Если обнаружены угрозы безопасности и выбран реальный VPN сервер
+          Alert.alert(
+            'Предупреждение безопасности',
+            `Обнаружены потенциальные угрозы безопасности:\n${securityStatus.threats.join(
+              '\n',
+            )}\n\nПодключение к VPN может быть небезопасным.`,
+            [
+              {
+                text: 'Отмена',
+                style: 'cancel',
+                onPress: () => {
+                  setConnecting(false);
+                },
+              },
+              {
+                text: 'Продолжить',
+                style: 'destructive',
+                onPress: async () => {
+                  // Продолжаем подключение, несмотря на угрозы
+                  await connectToVpnServer();
+                },
+              },
+            ],
+          );
         } else {
-          Alert.alert('Ошибка', result.message);
+          // Если устройство безопасно или выбран демо-сервер, подключаемся
+          await connectToVpnServer();
         }
       } catch (error) {
-        Alert.alert('Ошибка', 'Не удалось подключиться к VPN');
+        const errorMessage =
+          error instanceof Error ? error.message : 'Неизвестная ошибка';
+        setError(errorMessage);
+        Alert.alert('Ошибка', `Не удалось подключиться к VPN: ${errorMessage}`);
         console.error(error);
-      } finally {
         setConnecting(false);
       }
+    }
+  };
+
+  // Функция для подключения к VPN серверу
+  const connectToVpnServer = async () => {
+    try {
+      if (!isVpnSupported && server.id === 'selectel') {
+        Alert.alert(
+          'Не поддерживается',
+          'VPN подключение не поддерживается на этой платформе',
+        );
+        setConnecting(false);
+        return;
+      }
+
+      const serverId = server.id || 'default';
+      const result = await connectToVpn(serverId);
+      setConnected(result.isConnected);
+      setStatusMessage(result.message);
+
+      if (result.isConnected) {
+        if (server.id === 'selectel') {
+          Alert.alert(
+            'Успешно',
+            `Подключено к серверу ${server.name}. Теперь ваше соединение защищено.`,
+          );
+        } else {
+          Alert.alert(
+            'Успешно',
+            `Подключено к серверу ${server.name} (демо режим)`,
+          );
+        }
+      } else {
+        setError(result.message);
+        Alert.alert('Ошибка', result.message);
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Неизвестная ошибка';
+      setError(errorMessage);
+      Alert.alert('Ошибка', `Не удалось подключиться к VPN: ${errorMessage}`);
+      console.error(error);
+    } finally {
+      setConnecting(false);
     }
   };
 
@@ -96,6 +183,8 @@ export const VPN = () => {
           <Text style={styles.statusMessage}>{statusMessage}</Text>
         ) : null}
 
+        {error ? <Text style={styles.errorMessage}>{error}</Text> : null}
+
         <Image
           style={styles.image}
           source={icons[connected ? 'online' : 'offline']}
@@ -108,18 +197,39 @@ export const VPN = () => {
           ]}
           disabled={connecting}
           onPress={handleConnect}>
-          <Text
-            style={[
-              styles.connectText,
-              {color: !connected ? colors.white : undefined},
-            ]}>
-            {connecting
-              ? 'ПОДОЖДИТЕ...'
-              : connected
-              ? 'ОТКЛЮЧИТЬСЯ'
-              : 'ПОДКЛЮЧИТЬСЯ'}
-          </Text>
+          {connecting ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator
+                color={connected ? colors.black : colors.white}
+              />
+              <Text
+                style={[
+                  styles.connectText,
+                  {
+                    color: !connected ? colors.white : undefined,
+                    marginLeft: 10,
+                  },
+                ]}>
+                ПОДОЖДИТЕ...
+              </Text>
+            </View>
+          ) : (
+            <Text
+              style={[
+                styles.connectText,
+                {color: !connected ? colors.white : undefined},
+              ]}>
+              {connected ? 'ОТКЛЮЧИТЬСЯ' : 'ПОДКЛЮЧИТЬСЯ'}
+            </Text>
+          )}
         </Pressable>
+
+        {server.id === 'selectel' && (
+          <Text
+            style={[styles.realVpnText, connected && {color: colors.success}]}>
+            {connected ? '✓ Реальное VPN подключение' : 'Реальный VPN сервер'}
+          </Text>
+        )}
       </View>
       <View
         style={[
@@ -180,6 +290,24 @@ const styles = StyleSheet.create({
     color: colors.gray,
     textAlign: 'center',
     ...fonts.caption,
+  },
+  errorMessage: {
+    marginTop: 10,
+    color: colors.error || 'red',
+    textAlign: 'center',
+    ...fonts.caption,
+  },
+  realVpnText: {
+    marginTop: 10,
+    color: colors.gray,
+    textAlign: 'center',
+    ...fonts.caption,
+    fontWeight: weights.semibold,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   image: {
     width: 180,
